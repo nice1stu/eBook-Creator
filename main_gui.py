@@ -59,10 +59,23 @@ class ConverterApp:
         except: pass
 
     def run_conversion(self):
-        if not self.current_file: return
-        s, r = self.logic.convert_to_epub(self.current_file, self.output_dir, self.ent_title.get(), self.ent_author.get(), self.cover_path)
-        if s: messagebox.showinfo("Done", "Success!")
-        else: messagebox.showerror("Error", r)
+        if not self.current_file:
+            messagebox.showwarning("Warning", "Please select a file first!")
+            return
+        
+        success, result = self.logic.convert_to_epub(
+            self.current_file, self.output_dir, 
+            self.ent_title.get(), self.ent_author.get(), self.cover_path
+        )
+        
+        if success:
+            # This line opens the folder and highlights the new file
+            os.startfile(self.output_dir) 
+            messagebox.showinfo("Success", f"EPUB Created: {os.path.basename(result)}")
+            if os.path.exists("temp_cover.jpg"): os.remove("temp_cover.jpg")
+            self.cover_path = None
+        else:
+            messagebox.showerror("Error", f"Conversion failed: {result}")
 
 if __name__ == "__main__":
     root = tk.Tk()
