@@ -1,4 +1,4 @@
-# converter_logic.py - Version 2.3.4
+# converter_logic.py - Version 2.4.0
 import subprocess
 import os
 import requests
@@ -6,30 +6,37 @@ import re
 
 class eBookConverterLogic:
     def __init__(self):
-        self.version = "2.3.4"
+        self.version = "2.4.0"
 
     def sanitize_filename(self, filename):
-        # Removes illegal characters and replaces ; with ,
+        """Removes illegal characters and replaces ; with ,"""
         clean = filename.replace(";", ",")
         clean = re.sub(r'[<>:"/\\|?*]', '', clean)
         return " ".join(clean.split()).strip()
 
     def parse_filename(self, filepath):
-        """Extracts core keywords from complex filenames for better searching."""
+        """Ultra-aggressive cleaning for product codes and series noise."""
         filename = os.path.splitext(os.path.basename(filepath))[0]
-        # Remove known noise like "BattleTech" or product codes like "08610"
-        noise = [r'BattleTech', r'\d{5}'] 
+        
+        # 1. Remove "LE" followed by numbers (e.g., LE5245)
+        # 2. Remove 4-5 digit standalone numbers
+        # 3. Remove "BattleTech"
+        noise_patterns = [r'LE\d+', r'\b\d{4,5}\b', r'BattleTech']
+        
         clean_name = filename
-        for pattern in noise:
+        for pattern in noise_patterns:
             clean_name = re.sub(pattern, '', clean_name, flags=re.I)
         
-        # Standard split
+        # Remove any resulting double spaces or stray dashes
+        clean_name = re.sub(r'\s+', ' ', clean_name).strip(" -")
+
         if " - " in clean_name:
             parts = clean_name.split(" - ")
             author = parts[-1].strip()
             title = " ".join(parts[:-1]).strip()
-            return title.strip(" -"), author
-        return clean_name.strip(), ""
+            return title, author
+            
+        return clean_name, ""
 
     def fetch_metadata_online(self, title, author=""):
         """Cleanly fetches only the core Title and Author from Google."""
@@ -48,6 +55,20 @@ class eBookConverterLogic:
                     "cover_url": info.get("imageLinks", {}).get("thumbnail")
                 }
         except: pass
+        return None
+
+    def download_cover(self, url):
+        """Downloads a cover image to a temporary file for Pandoc to use."""
+        if not url: return None
+        try:
+            r = requests.get(url, timeout=5)
+            if r.status_code == 200:
+                path = os.path.join(os.getcwd(), "temp_cover.jpg")
+                with open(path, 'wb') as f:
+                    f.write(r.content)
+                return path
+        except:
+            return None
         return None
 
     def convert_to_epub(self, input_path, output_folder, title, author, cover_path=None):

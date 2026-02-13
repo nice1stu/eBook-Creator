@@ -1,81 +1,111 @@
+# main_gui.py - Version 2.4.0
 import tkinter as tk
-from tkinter import filedialog, messagebox
+from tkinter import filedialog, messagebox, ttk
 import os
 import requests
+import threading # To keep the UI from freezing during batch
 from converter_logic import eBookConverterLogic
 
 class ConverterApp:
     def __init__(self, root):
         self.root = root
-        self.root.title("eBook Creator v2.3.1")
-        self.root.geometry("500x500")
+        self.root.title("AI eBook Creator v2.4.0 - Batch Edition")
+        self.root.geometry("550x650")
         self.logic = eBookConverterLogic()
-        self.cover_path = None
-        self.current_file = None
         
-        # Setup Default Paths
-        self.source_dir = os.path.join(os.getcwd(), "To_Be_Processed")
         self.output_dir = os.path.join(os.getcwd(), "Processed")
-        for d in [self.source_dir, self.output_dir]:
-            if not os.path.exists(d): os.makedirs(d)
+        if not os.path.exists(self.output_dir): os.makedirs(self.output_dir)
 
-        tk.Label(root, text="Step 1: Select File", font=("Arial", 10, "bold")).pack(pady=10)
-        tk.Button(root, text="📁 Choose File", command=self.select_and_parse).pack()
-        
-        tk.Label(root, text="Title:").pack(pady=(20,0))
-        self.ent_title = tk.Entry(root, width=40)
-        self.ent_title.pack()
-        
-        tk.Label(root, text="Author:").pack(pady=(10,0))
-        self.ent_author = tk.Entry(root, width=40)
-        self.ent_author.pack()
+        self.setup_ui()
 
-        self.lbl_cover = tk.Label(root, text="No cover", fg="gray")
-        self.lbl_cover.pack(pady=10)
-        
-        tk.Button(root, text="Convert Now", command=self.run_conversion, bg="green", fg="white", height=2).pack(pady=20)
+    def setup_ui(self):
+        # Single File Section
+        tk.Label(self.root, text="--- Single File Mode ---", font=("Arial", 10, "bold")).pack(pady=10)
+        tk.Button(self.root, text="📁 Select Single File", command=self.select_single).pack()
 
-    def select_and_parse(self):
-        f = filedialog.askopenfilename(initialdir=self.source_dir)
+        # Metadata Fields
+        self.ent_title = tk.Entry(self.root, width=45); self.ent_title.pack(pady=5)
+        self.ent_author = tk.Entry(self.root, width=45); self.ent_author.pack(pady=5)
+        self.lbl_cover = tk.Label(self.root, text="No cover", fg="gray"); self.lbl_cover.pack()
+        
+        # Batch Section
+        tk.Frame(self.root, height=2, bd=1, relief="sunken").pack(fill="x", padx=20, pady=20)
+        tk.Label(self.root, text="--- Batch Mode ---", font=("Arial", 10, "bold")).pack()
+        tk.Button(self.root, text="🗂️ Select Folder to Convert All", command=self.start_batch_thread, bg="#3498db", fg="white").pack(pady=10)
+
+        # Progress Bar
+        self.progress = ttk.Progressbar(self.root, orient="horizontal", length=400, mode="determinate")
+        self.progress.pack(pady=20)
+        
+        self.status_var = tk.StringVar(value="Ready")
+        tk.Label(self.root, textvariable=self.status_var, bd=1, relief="sunken", anchor="w").pack(side="bottom", fill="x")
+
+        # Convert Button for Single Mode
+        self.btn_single = tk.Button(self.root, text="Convert Single File", command=self.run_single_conversion, bg="#2ecc71", fg="white")
+        self.btn_single.pack(pady=10)
+
+    def select_single(self):
+        f = filedialog.askopenfilename()
         if not f: return
         self.current_file = f
         t, a = self.logic.parse_filename(f)
+        self.update_metadata_ui(t, a)
+
+    def update_metadata_ui(self, t, a):
         self.ent_title.delete(0, tk.END); self.ent_title.insert(0, t)
         self.ent_author.delete(0, tk.END); self.ent_author.insert(0, a)
-        
-        # Fetch Online
         data = self.logic.fetch_metadata_online(t, a)
         if data:
             self.ent_title.delete(0, tk.END); self.ent_title.insert(0, data['title'])
             self.ent_author.delete(0, tk.END); self.ent_author.insert(0, data['author'])
-            if data['cover_url']: self.download_cover(data['cover_url'])
-
-    def download_cover(self, url):
-        try:
-            r = requests.get(url)
-            self.cover_path = "temp_cover.jpg"
-            with open(self.cover_path, 'wb') as f: f.write(r.content)
-            self.lbl_cover.config(text="Cover: Found!", fg="green")
-        except: pass
-
-    def run_conversion(self):
-        if not self.current_file:
-            messagebox.showwarning("Warning", "Please select a file first!")
-            return
-        
-        success, result = self.logic.convert_to_epub(
-            self.current_file, self.output_dir, 
-            self.ent_title.get(), self.ent_author.get(), self.cover_path
-        )
-        
-        if success:
-            # This line opens the folder and highlights the new file
-            os.startfile(self.output_dir) 
-            messagebox.showinfo("Success", f"EPUB Created: {os.path.basename(result)}")
-            if os.path.exists("temp_cover.jpg"): os.remove("temp_cover.jpg")
-            self.cover_path = None
+            self.cover_path = self.logic.download_cover(data['cover_url'])
+            self.lbl_cover.config(text="Cover Found!", fg="green")
         else:
-            messagebox.showerror("Error", f"Conversion failed: {result}")
+            self.cover_path = None
+            self.lbl_cover.config(text="No cover found", fg="gray")
+
+    def run_single_conversion(self):
+        success, result = self.logic.convert_to_epub(self.current_file, self.output_dir, self.ent_title.get(), self.ent_author.get(), self.cover_path)
+        if success: 
+            os.startfile(self.output_dir)
+            messagebox.showinfo("Done", "Conversion Complete!")
+
+    def start_batch_thread(self):
+        folder = filedialog.askdirectory()
+        if not folder: return
+        # We run this in a thread so the UI doesn't freeze
+        threading.Thread(target=self.run_batch, args=(folder,), daemon=True).start()
+
+    def run_batch(self, folder):
+        files = [f for f in os.listdir(folder) if f.lower().endswith(('.txt', '.rtf', '.docx'))]
+        if not files:
+            messagebox.showinfo("Empty", "No compatible files found in folder.")
+            return
+
+        self.progress["maximum"] = len(files)
+        count = 0
+        
+        for filename in files:
+            count += 1
+            full_path = os.path.join(folder, filename)
+            self.status_var.set(f"Processing {count}/{len(files)}: {filename}")
+            self.progress["value"] = count
+            
+            # 1. Parse
+            t, a = self.logic.parse_filename(full_path)
+            # 2. Scrape
+            data = self.logic.fetch_metadata_online(t, a)
+            final_t = data['title'] if data else t
+            final_a = data['author'] if data else a
+            cover = self.logic.download_cover(data['cover_url']) if data else None
+            
+            # 3. Convert
+            self.logic.convert_to_epub(full_path, self.output_dir, final_t, final_a, cover)
+            
+        self.status_var.set("Batch Complete!")
+        os.startfile(self.output_dir)
+        messagebox.showinfo("Batch Done", f"Successfully processed {len(files)} files!")
+        self.progress["value"] = 0
 
 if __name__ == "__main__":
     root = tk.Tk()
