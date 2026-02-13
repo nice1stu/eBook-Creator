@@ -1,70 +1,42 @@
-# tester.py - Version 2.3.0
+# tester.py - Version 2.6.0 (Generator Only)
 import os
 import shutil
-import time
-from converter_logic import eBookConverterLogic
 
-def run_metadata_test():
-    print(f"{'='*60}")
-    print("eBook Converter - Metadata & Parsing Test Suite v2.3.0")
-    print(f"{'='*60}\n")
+def generate_test_environment():
+    # We want to put these in the folder your main app actually looks at
+    target_dir = "To_Be_Processed"
     
-    logic = eBookConverterLogic()
-    source_dir = "Test_Inputs"
-    output_dir = "Test_Outputs"
-    
-    # Refresh test folders
-    for d in [source_dir, output_dir]:
-        if os.path.exists(d): shutil.rmtree(d)
-        os.makedirs(d)
+    # Refresh the folder
+    if os.path.exists(target_dir):
+        shutil.rmtree(target_dir)
+    os.makedirs(target_dir)
 
-    # Test cases named "Author - Title" to test the parser and scraper
-    test_cases = [
-        "J.R.R. Tolkien - The Hobbit.rtf",
-        "George Orwell - 1984.txt",
-        "Mary Shelley - Frankenstein.rtf"
-    ]
-
-    print(f"{'Filename':<35} | {'Parse':<10} | {'Scrape':<10}")
-    print("-" * 60)
-
-    for filename in test_cases:
-        input_path = os.path.join(source_dir, filename)
+    # The "Test Payload"
+    test_files = {
+        # Valid files that should be easy (Confidence High)
+        "J.R.R. Tolkien - The Hobbit.rtf": "content",
+        "Michael A. Stackpole - Warrior; Coupé.rtf": "content",
         
-        # 1. Create the dummy file
-        with open(input_path, "w", encoding="utf-8") as f:
-            f.write(f"This is a test file for {filename}")
-
-        # 2. Test the Parser (Internal Logic)
-        title, author = logic.parse_filename(input_path)
-        parse_ok = "✅" if title and author else "❌"
-
-        # 3. Test the Scraper (Google Books API)
-        # We add a tiny sleep so we don't spam the API too fast
-        time.sleep(1)
-        meta = logic.fetch_metadata_online(title, author)
-        scrape_ok = "✅" if meta and 'title' in meta else "❌"
-
-        print(f"{filename:<35} | {parse_ok:<10} | {scrape_ok:<10}")
-
-        # 4. Final Conversion Test
-        final_title = meta['title'] if meta else title
-        final_author = meta['author'] if meta else author
+        # Typos/Vague names (Should trigger the Intervention UI)
+        "George Orwell - 1983.txt": "content",
+        "ax79_v01_final_final.txt": "content",
         
-        success, result = logic.convert_to_epub(input_path, output_dir, final_title, final_author)
-        
-        if not success:
-            print(f"   ⚠️ Conversion failed for {filename}: {result}")
+        # Junk files (Should be ignored by the app's filter)
+        "Playlist_Summer.mp3": "audio data",
+        "System_Log_Backup.mov": "video data"
+    }
 
-    print(f"\n{'='*60}")
-    print("Test Complete.")
-    print("Check 'Test_Outputs' to see the generated EPUBs.")
-    print(f"{'='*60}\n")
+    print("--- EBOOK CREATOR TEST GENERATOR ---")
+    for filename, content in test_files.items():
+        path = os.path.join(target_dir, filename)
+        with open(path, "w") as f:
+            f.write(content)
+        print(f"Created: {filename}")
 
-    input("Press Enter to cleanup test files and exit...")
-    shutil.rmtree(source_dir)
-    shutil.rmtree(output_dir)
-    if os.path.exists("temp_cover.jpg"): os.remove("temp_cover.jpg")
+    print("\n" + "="*40)
+    print(f"SUCCESS: {len(test_files)} files generated in '{target_dir}'.")
+    print("You can now run 'main_gui.py' to test the Batch Mode.")
+    print("="*40)
 
 if __name__ == "__main__":
-    run_multi_format_test = run_metadata_test()
+    generate_test_environment()
